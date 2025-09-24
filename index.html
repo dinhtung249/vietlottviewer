@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vietlott Viewer</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Thanh Nav chính -->
+  <nav class="main-nav">
+    <a href="#" class="nav-item active" data-game="home">Trang chủ</a>
+    <a href="#" class="nav-item" data-game="max3dpro">Max 3D Pro</a>
+    <a href="#" class="nav-item" data-game="max3d">Max 3D</a>
+    <a href="#" class="nav-item" data-game="mega645">Mega 6/45</a>
+    <a href="#" class="nav-item" data-game="power655">Power 6/55</a>
+    <a href="#" class="nav-item" data-game="lotto535">Lotto 5/35</a>
+  </nav>
+
+  <div id="content">
+    <!-- Trang chủ -->
+    <section id="home" class="page active">
+      <h1>Trang chủ</h1>
+      <p>Đang xây dựng…</p>
+    </section>
+
+    <!-- Max 3D Pro -->
+    <section id="max3dpro" class="page">
+      <h1>Max 3D Pro</h1>
+      <div class="sub-nav">
+        <button class="sub-btn active" data-tab="results">Kết quả</button>
+        <button class="sub-btn" data-tab="cycles">Thống kê chu kỳ</button>
+      </div>
+      <div class="sub-content">
+        <div id="results" class="sub-tab active">
+		<!-- Thanh tìm kiếm kết quả -->
+		<div class="row" style="gap:10px; margin:10px 0; flex-wrap:wrap;">
+		  <input id="searchInput" type="text" placeholder="Nhập số: 740 hoặc 740,262"
+				 style="min-width:260px; padding:8px 10px; border-radius:8px; border:1px solid #1f2937; background:#0f1722; color:#e6edf3;">
+		  <button id="btnSearch" class="btn">Tìm</button>
+		  <button id="btnReset" class="btn">Xóa</button>
+		  <span id="statsCount" class="pill">Chưa có dữ liệu.</span>
+		</div>
+
+          <!-- Kết quả sẽ render vào đây -->
+          <div id="legend"></div>
+          <div class="scroll">
+            <table id="tbl">
+              <thead>
+                <tr id="thead-row">
+                  <th>Ngày</th><th>ID</th>
+                </tr>
+              </thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
+          <div id="statsCount" class="pill"></div>
+        </div>
+		<div id="cycles" class="sub-tab">
+		  <div class="row" style="margin-bottom:10px; gap:10px; flex-wrap:wrap;">
+			<label class="pill">Từ kỳ:
+			  <input id="fromIdInput" type="number" min="1" step="1" style="width:110px; margin-left:8px;" />
+			</label>
+			<label class="pill">Đến kỳ:
+			  <input id="toIdInput" type="number" min="1" step="1" style="width:110px; margin-left:8px;" />
+			</label>
+			<button id="btnRunStats" class="btn">Tính thống kê</button>
+		  </div>
+
+		  <!-- Top số & Top cặp hiển thị cạnh nhau -->
+		  <div id="statsTopWrap" style="display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:12px;">
+			<div class="card inner">
+			  <h2>Top số (đơn)</h2>
+			  <div class="scroll small">
+				<table>
+				  <thead><tr><th>#</th><th>Số</th><th>Lần xuất hiện</th></tr></thead>
+				  <tbody id="tbTopSingles"></tbody>
+				</table>
+			  </div>
+			</div>
+			<div class="card inner">
+			  <h2>Top cặp 2 số (đồng kỳ)</h2>
+			  <div class="scroll small">
+				<table>
+				  <thead><tr><th>#</th><th>Cặp</th><th>Lần đồng xuất hiện</th></tr></thead>
+				  <tbody id="tbTopPairs"></tbody>
+				</table>
+			  </div>
+			</div>
+		  </div>
+
+		  <!-- Chu kỳ -->
+		  <div class="card inner" style="margin-top:12px;">
+			<h2>Chu kỳ lặp</h2>
+			<div class="scroll medium">
+			  <table>
+				<thead>
+				  <tr><th>#</th><th>Số</th><th>Lần</th><th>TB</th><th>Max</th><th>Hiện tại</th></tr>
+				</thead>
+				<tbody id="tbCycles"></tbody>
+			  </table>
+			</div>
+			<div class="footnote">Khoảng kỳ áp dụng cho cả Top số, Top cặp và Chu kỳ.</div>
+		  </div>
+		</div>
+
+      </div>
+    </section>
+
+    <!-- Các game khác giữ trống -->
+    <section id="max3d" class="page"><h1>Max 3D</h1></section>
+    <section id="mega645" class="page"><h1>Mega 6/45</h1></section>
+    <section id="power655" class="page"><h1>Power 6/55</h1></section>
+    <section id="lotto535" class="page"><h1>Lotto 5/35</h1></section>
+  </div>
+
+  <!-- JS -->
+  <script src="js/config.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/viewer.js"></script>
+  <script src="js/stats.js"></script>
+</body>
+</html>
