@@ -13,6 +13,11 @@ const statsCount = document.getElementById("statsCount");
 const searchInput = document.getElementById("searchInput");
 const btnSearch   = document.getElementById("btnSearch");
 const btnReset    = document.getElementById("btnReset");
+//hiển thị khoảng cách
+const btnToggleAnnot = document.getElementById("btnToggleAnnot");
+
+let SHOW_ANNOT = false;     // trạng thái bật/tắt hiển thị khoảng cách
+let PREV_GAPS = new Map();  // Map<rowKey, Map<num, gap>>
 
 
 // Dữ liệu
@@ -85,22 +90,36 @@ function renderBody() {
   SHOWN.forEach(r => {
     const tr = document.createElement("tr");
 
-    // Cột ngày & ID
     const tdDate = document.createElement("td"); tdDate.textContent = r.date || "";
     const tdId   = document.createElement("td"); tdId.textContent   = r.id || "";
     tr.appendChild(tdDate); tr.appendChild(tdId);
 
-    // Các cột giải
+    const rowKey = rowKeyOf(r);
+    const gapsMap = PREV_GAPS.get(rowKey) || new Map();
+
     PRIZE_KEYS.forEach(k => {
       const td = document.createElement("td");
       const arr = (r.result && r.result[k]) ? r.result[k] : [];
       if (!arr || !Array.isArray(arr) || arr.length === 0) {
         td.textContent = "—";
       } else {
-        const wrap = document.createElement("div");
-        wrap.className = "badges"; // flex-wrap + gap trong CSS
-        arr.map(x => String(x)).forEach(n => wrap.appendChild(makeBadge(n, width)));
-        td.appendChild(wrap);
+        if (SHOW_ANNOT) {
+          // hiển thị số + dòng gap
+          const wrap = document.createElement("div");
+          wrap.className = "badges-annot";
+          arr.map(x=>String(x)).forEach(n=>{
+            const norm = padN(n, width);
+            const gap  = gapsMap.has(norm) ? gapsMap.get(norm) : null;
+            wrap.appendChild(makeAnnotatedBadge(norm, width, gap));
+          });
+          td.appendChild(wrap);
+        } else {
+          // hiển thị như cũ (badge thường)
+          const wrap = document.createElement("div");
+          wrap.className = "badges";
+          arr.map(x=>String(x)).forEach(n=> wrap.appendChild(makeBadge(n, width)));
+          td.appendChild(wrap);
+        }
       }
       tr.appendChild(td);
     });
@@ -108,10 +127,9 @@ function renderBody() {
     tbody.appendChild(tr);
   });
 
-  if (statsCount) {
-    statsCount.textContent = `Hiển thị ${SHOWN.length} / ${RAW.length} kỳ.`;
-  }
+  if (statsCount) statsCount.textContent = `Hiển thị ${SHOWN.length} / ${RAW.length} kỳ.`;
 }
+
 
 // Chuẩn hóa đầu vào: "740, 262" -> ["740","262"] theo width game
 function parseSearchNumbers(raw, width) {
@@ -140,6 +158,61 @@ function rowContainsAllTargets(row, prizeKeys, targets, width) {
   return targets.every(t => all.includes(t));
 }
 
+function rowKeyOf(r){ return `${r.date}#${r.id}`; }
+
+// tạo badge có chú thích gap (kỳ từ lần trước)
+function makeAnnotatedBadge(numStr, width, gap){
+  const color = colorFor(numStr);
+  const r = parseInt(color.slice(1,3),16), g = parseInt(color.slice(3,5),16), b = parseInt(color.slice(5,7),16);
+
+  const wrap = document.createElement("div");
+  wrap.className = "badge-annot";
+  wrap.style.background = `rgba(${r},${g},${b},0.14)`;
+  wrap.style.borderColor = `rgba(${r},${g},${b},0.5)`;
+
+  const num = document.createElement("div");
+  num.className = "num";
+  num.textContent = padN(numStr, width);
+  num.style.color = "#fff";
+
+  const sub = document.createElement("div");
+  sub.className = "gap";
+  sub.textContent = (gap == null ? "—" : `${gap} kỳ`);
+
+  wrap.appendChild(num);
+  wrap.appendChild(sub);
+  return wrap;
+}
+
+// tính khoảng cách lần xuất hiện trước đó cho mỗi số ở từng kỳ (tính trên toàn bộ RAW)
+function computePrevGapsForAllRows(rows, prizeKeys, width){
+  const asc = rows.slice().sort((a,b)=>{
+    if ((a.date||"") !== (b.date||"")) return (a.date||"") < (b.date||"") ? -1 : 1;
+    return (parseInt(a.id||"0",10) - parseInt(b.id||"0",10));
+  });
+  const lastSeen = new Map();              // num -> last index
+  const gapsByRow = new Map();             // rowKey -> Map<num, gap>
+
+  for (let idx=0; idx<asc.length; idx++){
+    const r = asc[idx];
+    const key = rowKeyOf(r);
+    const m = new Map();
+
+    const widthN = (window.APP_CONFIG && window.APP_CONFIG.games?.[CURRENT_GAME]?.numberWidth) || 3;
+    const nums = new Set();
+    prizeKeys.forEach(k => (r.result?.[k]||[]).forEach(n => nums.add(padN(String(n), widthN))));
+
+    nums.forEach(n=>{
+      if (lastSeen.has(n)) m.set(n, idx - lastSeen.get(n));
+      else m.set(n, null);
+      lastSeen.set(n, idx);
+    });
+
+    gapsByRow.set(key, m);
+  }
+  return gapsByRow;
+}
+
 
 // ----- Nạp dữ liệu từ file -----
 async function loadFromPath(path) {
@@ -159,17 +232,21 @@ async function loadFromPath(path) {
   PRIZE_KEYS = inferPrizeKeys(RAW, pref);
   SHOWN = RAW.slice();
 
+  // sau khi có RAW, PRIZE_KEYS, SHOWN
+  const width = window.APP_CONFIG?.games?.[CURRENT_GAME]?.numberWidth || 3;
+  PREV_GAPS = computePrevGapsForAllRows(RAW, PRIZE_KEYS, width);
+
   renderLegend();
   renderHeader();
   renderBody();
 
-  // 👇👇 QUAN TRỌNG: "export" dữ liệu để stats.js lấy được
-  const width = window.APP_CONFIG?.games?.[CURRENT_GAME]?.numberWidth || 3;
+  // "export" dữ liệu để stats.js, hotcold.js dùng
   window.getMax3DProData = () => ({ RAW, SHOWN, PRIZE_KEYS, width });
 
-  // phát sự kiện cho stats.js biết là dữ liệu đã sẵn sàng (tuỳ chọn)
+  // phát sự kiện cho stats.js biết dữ liệu đã sẵn sàng
   document.dispatchEvent(new CustomEvent("max3dpro:ready"));
 }
+
 //chay tìm kiếm ở kết quả
 function runSearch() {
   const width = (window.APP_CONFIG && window.APP_CONFIG.games?.[CURRENT_GAME]?.numberWidth) || 3;
@@ -190,6 +267,14 @@ if (btnReset)  btnReset.addEventListener("click", () => { if (searchInput) searc
 if (searchInput) {
   searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); runSearch(); }
+  });
+}
+//bật nút tắt hiển thị khoảng cách kì
+if (btnToggleAnnot) {
+  btnToggleAnnot.addEventListener("click", ()=>{
+    SHOW_ANNOT = !SHOW_ANNOT;
+    btnToggleAnnot.textContent = SHOW_ANNOT ? "Ẩn khoảng cách" : "Hiện khoảng cách";
+    renderBody(); // vẽ lại theo trạng thái mới
   });
 }
 

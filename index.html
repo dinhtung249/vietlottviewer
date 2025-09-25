@@ -30,6 +30,8 @@
       <div class="sub-nav">
         <button class="sub-btn active" data-tab="results">Kết quả</button>
         <button class="sub-btn" data-tab="cycles">Thống kê chu kỳ</button>
+		<button class="sub-btn" data-tab="hotcold">Nóng/Lạnh &amp; Xu hướng</button>
+
       </div>
       <div class="sub-content">
         <div id="results" class="sub-tab active">
@@ -39,6 +41,7 @@
 				 style="min-width:260px; padding:8px 10px; border-radius:8px; border:1px solid #1f2937; background:#0f1722; color:#e6edf3;">
 		  <button id="btnSearch" class="btn">Tìm</button>
 		  <button id="btnReset" class="btn">Xóa</button>
+		  <button id="btnToggleAnnot" class="btn">Hiện khoảng cách</button>
 		  <span id="statsCount" class="pill">Chưa có dữ liệu.</span>
 		</div>
 
@@ -104,6 +107,52 @@
 		  </div>
 		</div>
 
+		<div id="hotcold" class="sub-tab">
+		  <div class="row" style="gap:10px; margin:10px 0; flex-wrap:wrap;">
+			<label class="pill">Gần đây (kỳ):
+			  <input id="hcRecentN" type="number" min="5" step="5" value="50" style="width:100px; margin-left:8px;">
+			</label>
+			<label class="pill">Top N:
+			  <input id="hcTopN" type="number" min="5" step="5" value="50" style="width:100px; margin-left:8px;">
+			</label>
+			<button id="btnRunHotCold" class="btn">Tính nóng/lạnh &amp; xu hướng</button>
+		  </div>
+
+		  <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px;">
+			<div class="card inner">
+			  <h2>Số nóng (gần đây)</h2>
+			  <div class="scroll small">
+				<table>
+				  <thead><tr><th>#</th><th>Số</th><th>Lần (gần đây)</th></tr></thead>
+				  <tbody id="tbHot"></tbody>
+				</table>
+			  </div>
+			</div>
+
+			<div class="card inner">
+			  <h2>Số lạnh (quá hạn)</h2>
+			  <div class="scroll small">
+				<table>
+				  <thead><tr><th>#</th><th>Số</th><th>Khoảng cách hiện tại</th></tr></thead>
+				  <tbody id="tbCold"></tbody>
+				</table>
+			  </div>
+			</div>
+
+			<div class="card inner">
+			  <h2>Xu hướng kỳ kế tiếp (điểm tổng hợp)</h2>
+			  <div class="scroll small">
+				<table>
+				  <thead><tr><th>#</th><th>Số</th><th>Điểm</th><th>Chi tiết</th></tr></thead>
+				  <tbody id="tbTrend"></tbody>
+				</table>
+			  </div>
+			  <div class="footnote">Điểm = 0.7 × chuẩn hoá khoảng cách hiện tại + 0.3 × chuẩn hoá tần suất dài hạn.</div>
+			</div>
+		  </div>
+		</div>
+
+
       </div>
     </section>
 
@@ -119,5 +168,7 @@
   <script src="js/core.js"></script>
   <script src="js/viewer.js"></script>
   <script src="js/stats.js"></script>
+  <script src="js/hotcold.js"></script>
+
 </body>
 </html>
