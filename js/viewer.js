@@ -241,7 +241,8 @@ async function loadFromPath(path) {
   renderBody();
 
   // "export" dữ liệu để stats.js, hotcold.js dùng
-  window.getMax3DProData = () => ({ RAW, SHOWN, PRIZE_KEYS, width });
+  window.getMax3DProData = () => ({ RAW, SHOWN, PRIZE_KEYS, width, PREV_GAPS });
+
 
   // phát sự kiện cho stats.js biết dữ liệu đã sẵn sàng
   document.dispatchEvent(new CustomEvent("max3dpro:ready"));

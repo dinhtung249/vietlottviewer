@@ -31,7 +31,7 @@
         <button class="sub-btn active" data-tab="results">Kết quả</button>
         <button class="sub-btn" data-tab="cycles">Thống kê chu kỳ</button>
 		<button class="sub-btn" data-tab="hotcold">Nóng/Lạnh &amp; Xu hướng</button>
-
+		<button class="sub-btn" data-tab="gapstats">Khoảng kỳ</button>
       </div>
       <div class="sub-content">
         <div id="results" class="sub-tab active">
@@ -152,6 +152,53 @@
 		  </div>
 		</div>
 
+		//khoảng kì
+				<div id="gapstats" class="sub-tab">
+		  <div class="row" style="gap:10px; margin:10px 0; flex-wrap:wrap;">
+			<label class="pill">Từ kỳ:
+			  <input id="gsFromId" type="number" min="1" step="1" style="width:110px; margin-left:8px;">
+			</label>
+			<label class="pill">Đến kỳ:
+			  <input id="gsToId" type="number" min="1" step="1" style="width:110px; margin-left:8px;">
+			</label>
+			<button id="btnRunGapStats" class="btn">Tính</button>
+		  </div>
+
+		  <div class="grid" style="gap:12px;">
+			<div class="card inner">
+			  <h2>Phổ khoảng cách kỳ</h2>
+			  <div class="scroll small">
+				<table>
+				  <thead><tr><th>#</th><th>Khoảng cách (kỳ)</th><th>Số lần</th></tr></thead>
+				  <tbody id="tbGapDist"></tbody>
+				</table>
+			  </div>
+			</div>
+
+			<div class="card inner">
+			  <h2>Nhóm theo dải số (000–099, …)</h2>
+			  <div class="scroll small">
+				<table>
+				  <thead><tr><th>#</th><th>Dải</th><th>Số lượt</th></tr></thead>
+				  <tbody id="tbBucket"></tbody>
+				</table>
+			  </div>
+			</div>
+		  </div>
+
+		  <div class="card inner" style="margin-top:12px;">
+			<h2>Tóm tắt theo kỳ (ID)</h2>
+			<div class="scroll medium">
+			  <table>
+				<thead>
+				  <tr><th>ID</th><th>Ngày</th><th>#Số có gap</th><th>Min gap</th><th>Avg gap</th><th>Max gap</th></tr>
+				</thead>
+				<tbody id="tbPerDraw"></tbody>
+			  </table>
+			</div>
+		  </div>
+		</div>
+
 
       </div>
     </section>
@@ -169,6 +216,11 @@
   <script src="js/viewer.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/hotcold.js"></script>
+  <script src="js/gapstats.js"></script>
+  
+  <script src="js/lotto535.js"></script>
+
+
 
 </body>
 </html>
