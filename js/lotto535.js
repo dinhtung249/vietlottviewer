@@ -317,21 +317,50 @@
             <input id="pg-input" type="number" min="1" step="1" />
             <button class="btn-mini" type="submit">Go</button>
           </form>
+		  <form id="pg-by-ky" style="display:flex;align-items:center;gap:6px;">
+			  <span>Tới kỳ</span>
+			  <input id="pg-by-ky-input" type="number" min="1" step="1"
+					 style="width:90px;padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#0d1324;color:#e5e7eb;" />
+			  <button class="btn-mini" type="submit">Go</button>
+			</form>
+
           <button class="btn-mini" id="pg-next">Next</button>
         </div>
         <div class="combos" id="combos-list"></div>
       </div>
+
+
     `;
 
     // load data
     const dataPath = CFG.dataPath;
-    let raw; if (dataPath.endsWith(".jsonl")) raw = parseJSONLLocal(await loadText(dataPath)); else raw = await loadJSON(dataPath);
-    const data = sortByNewestId(raw);
+	let raw;
+	if (dataPath.endsWith(".jsonl")) raw = parseJSONLLocal(await loadText(dataPath));
+	else raw = await loadJSON(dataPath);
+
+	// Chuẩn hoá dữ liệu mới (ky → id, bonus tách riêng)
+	const data = raw.map(r => ({
+	  date: r.date,
+	  id: r.ky || r.id,
+	  result: Array.isArray(r.result) ? [...r.result, r.bonus] : [],
+	}));
+	data.sort((a,b)=> parseInt(b.id,10) - parseInt(a.id,10)); // mới → cũ
+
     const occIndex = buildOccurrenceIndex(data);
     const winMap = buildWinMap(data);
     const keyToRank = buildKeyToRank();
     const winRanks  = buildWinRanks(winMap, keyToRank);
     const winGapStat = gapStatsFromWinRanks(winRanks);
+
+	// Map kỳ (ID số) -> rank của tổ hợp thắng ở kỳ đó
+	const idToRank = new Map();
+	for (const r of data){
+	  const idNum = parseInt(r.id, 10);
+	  const main = r.result.slice(0,5).slice().sort((a,b)=>a-b);
+	  const key  = main.join("-");
+	  const rank = keyToRank.get(key);
+	  if (rank != null) idToRank.set(idNum, rank);
+	}
 
     // ===== Results tab =====
     const tbody = container.querySelector("#tab-results tbody");
@@ -412,6 +441,7 @@
     const combosState = {
       winMap,
       keyToRank,
+	  idToRank,  
       hitRanks: winRanks.slice(),
       TOTAL_COMBOS,
       combosPageSize: CFG.combosPageSize,
@@ -470,6 +500,48 @@
     document.getElementById("chk-hitonly").addEventListener("change", ()=>{
       renderCombosPage(combosState, 1);
     });
+	// Jump tới trang chứa kỳ trúng X
+	document.getElementById("pg-by-ky").addEventListener("submit", (e)=>{
+	  e.preventDefault();
+	  const inp = document.getElementById("pg-by-ky-input");
+	  const val = parseInt(inp.value, 10);
+	  if (!Number.isFinite(val)) return;
+
+	  const rank = combosState.idToRank.get(val);
+	  if (rank == null) {
+		alert("Không tìm thấy kỳ này trong dữ liệu.");
+		return;
+	  }
+
+	  const hitOnly = document.getElementById("chk-hitonly").checked;
+	  let targetPage;
+
+	  if (!hitOnly) {
+		// Trang trong chế độ “Tất cả tổ hợp”
+		targetPage = Math.ceil(rank / combosState.combosPageSize);
+	  } else {
+		// Trang trong chế độ “Chỉ bộ đã trúng”
+		const idx = combosState.hitRanks.indexOf(rank);
+		if (idx < 0) {
+		  alert("Kỳ này không nằm trong danh sách đã trúng (theo lọc hiện tại).");
+		  return;
+		}
+		targetPage = Math.floor(idx / combosState.combosPageSize) + 1;
+	  }
+
+	  // Render trang đích
+	  renderCombosPage(combosState, targetPage);
+
+	  // Cuộn & highlight nhẹ tổ hợp cần tìm
+	  const arr = unrankComb(35, 5, rank);
+	  const key = comboKey(arr);
+	  const el  = document.querySelector(`.combo-item[data-key="${key}"]`);
+	  if (el) {
+		el.scrollIntoView({ block: "center", behavior: "smooth" });
+		el.style.outline = "2px solid #60a5fa";
+		setTimeout(()=>{ el.style.outline = ""; }, 1500);
+	  }
+	});
 
     // Subtabs switching
     const tabs = container.querySelectorAll(".subtabs .tbtn");
