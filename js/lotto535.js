@@ -1,27 +1,33 @@
-// js/lotto535.js — Lotto 5/35: Kết quả + Tab con "Tổ hợp 5/35"
-// Safe IIFE (không đụng global)
+// js/lotto535.js — Lotto 5/35
+// Safe IIFE (no globals), 2 subtabs: Results & Combos
+// - Results: compact table, color-by-decade, bonus red, toggle gap view (vs chips), infinite scroll
+// - Combos: list all 324,632 combos in lexicographic order, 100 per page with Prev/Next/Jump, highlight winning combos,
+//           detail shows rank info + neighbor rank gaps + global gaps stats (on combo order), jump does exact unrank.
+// Author: ChatGPT (vietlottviewer helper)
 (function(){
   const CFG = {
     dataPath: "data/lotto535.jsonl",
-    pageSizeResults: 30,   // trang "Kết quả"
+    // Results tab paging
+    pageSizeResults: 30,
     maxInitialResults: 60,
-    pageSizeCombos: 1500,  // trang "Tổ hợp 5/35" — mỗi lần nạp thêm bao nhiêu bộ
+    // Combos tab paging
+    combosPageSize: 100,
   };
 
-  // ===== helpers cục bộ =====
+  // ------------- helpers (local) -------------
   async function loadText(url){ const r=await fetch(url,{cache:"no-store"}); if(!r.ok) throw new Error(`Không tải được ${url} (${r.status})`); return await r.text(); }
   async function loadJSON(url){ const r=await fetch(url,{cache:"no-store"}); if(!r.ok) throw new Error(`Không tải được ${url} (${r.status})`); return await r.json(); }
   function parseJSONLLocal(t){ const out=[]; for(const line of t.split("\n")){ const s=line.trim(); if(!s) continue; out.push(JSON.parse(s)); } return out; }
   const ballClass = n => (n<=9) ? "dec-0" : (n<=19) ? "dec-1" : (n<=29) ? "dec-2" : "dec-3";
-
   function sortByNewestId(rows){ return rows.sort((a,b)=> (parseInt(b.id,10) - parseInt(a.id,10))); }
 
-  // ===== Chỉ mục xuất hiện số (cho tab Kết quả) =====
+  // ------------- occurrences & gaps (Results) -------------
   function buildOccurrenceIndex(rows){
     const occ = new Map();
     for (const r of rows){
       const id = parseInt(r.id, 10);
       for (const n of (r.result||[])){
+        if (typeof n !== "number") continue;
         if (!occ.has(n)) occ.set(n, []);
         occ.get(n).push(id);
       }
@@ -32,46 +38,92 @@
   function prevIdBinary(list, idNow){
     let lo=0, hi=list.length-1, ans=null;
     while (lo<=hi){
-      const mid=(lo+hi)>>1, val=list[mid];
-      if (val >= idNow) lo = mid+1;
-      else { ans = val; hi = mid-1; }
+      const mid=(lo+hi)>>1;
+      const val=list[mid];
+      if (val >= idNow){ lo = mid+1; } else { ans = val; hi = mid-1; }
     }
     return ans;
   }
 
-  // ===== Map bộ trúng (cho tab Tổ hợp) =====
-  // key "a-b-c-d-e" (a<b<...<e), value = danh sách ID (tăng dần) các kỳ trúng
+  // ------------- win map & combo utilities (Combos) -------------
+  // winMap: key "a-b-c-d-e" -> array of winning IDs (ascending) for main 5 nums
   function buildWinMap(rows){
-    const map = new Map();
+    const m = new Map();
     for (const r of rows){
       const id = parseInt(r.id, 10);
       const main = r.result.slice(0,5).slice().sort((a,b)=>a-b);
       const key = main.join("-");
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(id);
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(id);
     }
-    for (const ids of map.values()) ids.sort((a,b)=>a-b);
-    return map;
+    for (const ids of m.values()) ids.sort((a,b)=>a-b);
+    return m;
+  }
+  // combinations nCk for small n,k
+  function nCk(n,k){
+    if (k<0 || k>n) return 0;
+    if (k===0 || k===n) return 1;
+    k = Math.min(k, n-k);
+    let num=1, den=1;
+    for (let i=1;i<=k;i++){ num *= (n - k + i); den *= i; }
+    return Math.round(num/den);
+  }
+  // unrank the r-th (1-based) k-combination of {1..n} in lexicographic order
+  function unrankComb(n, k, rank){
+    const res = [];
+    let x = 1;
+    for (let i = k; i >= 1; i--){
+      while (x <= n){
+        const count = nCk(n - x, i - 1);
+        if (rank > count){ rank -= count; x++; } else { res.push(x); x++; break; }
+      }
+    }
+    return res;
+  }
+  function comboKey(arr){ return arr.join("-"); }
+  function numsSpan(arr){ return arr.map(n=>`<span class="n">${String(n).padStart(2,'0')}</span>`).join(""); }
+
+  // Build mapping key->rank and list of ranks that have won
+  function buildKeyToRank(){
+    const m = new Map();
+    const TOTAL = nCk(35,5);
+    for (let r=1; r<=TOTAL; r++){
+      const arr = unrankComb(35,5,r);
+      m.set(comboKey(arr), r);
+    }
+    return m;
+  }
+  function buildWinRanks(winMap, keyToRank){
+    const ranks = [];
+    for (const key of winMap.keys()){
+      const r = keyToRank.get(key);
+      if (r != null) ranks.push(r);
+    }
+    ranks.sort((a,b)=>a-b);
+    return ranks;
+  }
+  function gapStatsFromWinRanks(winRanks){
+    const gaps = [];
+    for (let i=1;i<winRanks.length;i++) gaps.push(winRanks[i]-winRanks[i-1]);
+    const avg = gaps.length ? (gaps.reduce((a,b)=>a+b,0) / gaps.length) : 0;
+    return { gaps, avg };
   }
 
-  // ===== CSS =====
+  // ------------- CSS -------------
   function ensureStylesOnce(){
     if (document.getElementById("lotto535-styles")) return;
     const css = `
     .lotto535 { margin-top:12px; }
-    .lotto535 .subtabs { display:flex; gap:8px; margin-bottom:10px; }
-    .lotto535 .subtabs .tbtn {
-      padding:8px 12px; border-radius:10px; border:1px solid #334155;
-      background:#0d1324; color:#e5e7eb; font-weight:700; cursor:pointer; font-size:13px;
-    }
-    .lotto535 .subtabs .tbtn.active { background:#1f2937; }
-
     .lotto535 .legend { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; font-size:13px; font-weight:600; }
     .lotto535 .legend .legend-box { padding:4px 10px; border-radius:8px; color:#fff; }
     .dec-0 { background:#3b82f6; } .dec-1 { background:#22c55e; } .dec-2 { background:#f59e0b; } .dec-3 { background:#8b5cf6; } .bonus { background:#ef4444; }
-    .lotto535 #toggle-gaps { margin-left:auto; padding:6px 10px; border-radius:8px; border:1px solid #334155; background:#0d1324; color:#e5e7eb; font-weight:700; cursor:pointer; font-size:12px; }
+    #toggle-gaps { margin-left:auto; padding:6px 10px; border-radius:8px; border:1px solid #334155; background:#0d1324; color:#e5e7eb; font-weight:700; cursor:pointer; font-size:12px; }
 
-    /* Kết quả */
+    .lotto535 .subtabs { display:flex; gap:8px; margin-bottom:10px; }
+    .lotto535 .subtabs .tbtn { padding:8px 12px; border-radius:10px; border:1px solid #334155; background:#0d1324; color:#e5e7eb; font-weight:700; cursor:pointer; font-size:13px; }
+    .lotto535 .subtabs .tbtn.active { background:#1f2937; }
+
+    /* Results */
     .lotto535 .tbl { width:100%; border-collapse:separate; border-spacing:0 8px; table-layout:fixed; }
     .lotto535 thead th { position:sticky; top:0; z-index:1; background:#0f172a; }
     .lotto535 th, .lotto535 td { padding:10px 12px; font-size:14px; white-space:nowrap; vertical-align:middle; }
@@ -82,7 +134,7 @@
     .lotto535 .cell-date { width:120px; color:#e5e7eb; font-weight:600; }
     .lotto535 .cell-id   { width:90px;  color:#cbd5e1; font-weight:700; text-align:right; }
     .lotto535 .balls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .lotto535 .ball { width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; background:#e5e7eb; color:#0b1220; box-shadow:0 2px 6px rgba(0,0,0,.18);}
+    .lotto535 .ball { width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; background:#e5e7eb; color:#0b1220; box-shadow:0 2px 6px rgba(0,0,0,.18); }
     .lotto535 .ball.dec-0 { background:#3b82f6; color:#fff; } .lotto535 .ball.dec-1 { background:#22c55e; color:#fff; } .lotto535 .ball.dec-2 { background:#f59e0b; color:#fff; } .lotto535 .ball.dec-3 { background:#8b5cf6; color:#fff; }
     .lotto535 .ball-bonus { background:#ef4444; color:#fff; border:2px solid #fff; }
     .lotto535 .plus { font-weight:700; opacity:.9; }
@@ -96,9 +148,12 @@
     .lotto535 .btn { padding:10px 14px; border-radius:10px; border:1px solid #334155; background:#111827; color:#e5e7eb; font-weight:600; cursor:pointer; }
     .lotto535 .btn[disabled]{ opacity:.5; cursor:default; }
 
-    /* Tổ hợp 5/35 */
+    /* Combos */
     .lotto535 .combo-bar { display:flex; align-items:center; gap:10px; margin:6px 0 10px; }
     .lotto535 .combo-bar .chk { display:flex; align-items:center; gap:6px; font-size:13px; color:#cbd5e1; }
+    .lotto535 .pager { display:flex; align-items:center; gap:8px; margin:8px 0 10px; }
+    .lotto535 .pager .btn-mini { padding:6px 10px; border-radius:8px; border:1px solid #334155; background:#111827; color:#e5e7eb; cursor:pointer; font-weight:700; font-size:12px; }
+    .lotto535 .pager input[type="number"]{ width:90px; padding:4px 6px; border-radius:6px; border:1px solid #334155; background:#0d1324; color:#e5e7eb; }
     .lotto535 .combos { display:flex; flex-direction:column; gap:8px; }
     .lotto535 .combo-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; border:1px solid #1f2937; background:#0b1220; }
     .lotto535 .combo-item.hit { border-color:#16a34a; box-shadow:0 0 0 1px rgba(22,163,74,.25) inset; }
@@ -116,7 +171,7 @@
     document.head.appendChild(style);
   }
 
-  // ===== View: KẾT QUẢ (giữ như trước, có toggle “Hiện/Ẩn khoảng kỳ”) =====
+  // ------------- Results helpers -------------
   function ballHtml(n,isBonus=false){
     const t = String(n).padStart(2,"0");
     return isBonus ? `<span class="ball ball-bonus">${t}</span>` : `<span class="ball ${"ball "+ballClass(n)}">${t}</span>`.replace("ball ball","ball");
@@ -137,11 +192,8 @@
       const prev = prevIdBinary(occIndex.get(n)||[], curId);
       out.push({ n, isBonus:false, gap: prev==null ? null : (curId - prev) });
     }
-    {
-      const n = bonus;
-      const prev = prevIdBinary(occIndex.get(n)||[], curId);
-      out.push({ n, isBonus:true, gap: prev==null ? null : (curId - prev) });
-    }
+    { const n = bonus; const prev = prevIdBinary(occIndex.get(n)||[], curId);
+      out.push({ n, isBonus:true, gap: prev==null ? null : (curId - prev) }); }
     tr.dataset.gapsReady = "1"; tr.dataset.gapsJson = JSON.stringify(out);
     return out;
   }
@@ -151,77 +203,77 @@
     wrap.innerHTML = arr.map(x=>chipHtml(x.n, x.gap, x.isBonus)).join("");
   }
 
-  // ===== View: TỔ HỢP 5/35 =====
-  // Generator tổ hợp theo thứ tự tăng dần (lexicographic)
-  function combosGenerator(){
-    let a=1,b=2,c=3,d=4,e=5, done=false, idx=0;
-    const next = ()=>{
-      if (done) return null;
-      const res = [a,b,c,d,e]; // return before increment
-      // increment
-      if (e<35){ e++; }
-      else if (d<34){ d++; e=d+1; }
-      else if (c<33){ c++; d=c+1; e=d+1; }
-      else if (b<32){ b++; c=b+1; d=c+1; e=d+1; }
-      else if (a<31){ a++; b=a+1; c=b+1; d=c+1; e=d+1; }
-      else { done=true; }
-      idx++;
-      return res;
-    };
-    return { next, get index(){ return idx; } };
+  // ------------- Combos paging renderer -------------
+  function renderCombosPage(state, page){
+    const { winMap, keyToRank, hitRanks, TOTAL_COMBOS, combosPageSize } = state;
+    const list = document.getElementById("combos-list");
+    const hitOnly = document.getElementById("chk-hitonly").checked;
+    list.innerHTML = "";
+
+    if (!hitOnly){
+      state.pgTotal = Math.ceil(TOTAL_COMBOS / combosPageSize);
+      page = Math.max(1, Math.min(page, state.pgTotal));
+      const startRank = (page - 1) * combosPageSize + 1;
+      const endRank   = Math.min(startRank + combosPageSize - 1, TOTAL_COMBOS);
+      for (let r = startRank; r <= endRank; r++){
+        const arr = unrankComb(35,5,r);
+        const key = comboKey(arr);
+        const ids = winMap.get(key);
+        const hit = !!ids;
+        const nums = numsSpan(arr);
+        const badge = hit ? `<span class="badge">${ids.length} lần</span>` : "";
+        const cls = hit ? "combo-item hit" : "combo-item";
+        list.insertAdjacentHTML("beforeend", `
+          <div class="${cls}" data-key="${key}">
+            <div class="nums">${nums}</div>
+            <div class="meta">
+              <span class="badge">#${r}</span>
+              ${badge}
+              <button class="btn-mini btn-detail" ${hit?"":"disabled"}>Chi tiết</button>
+            </div>
+          </div>
+          <div class="combo-detail" data-detail="${key}"></div>
+        `);
+      }
+      state.pgCur = page;
+    } else {
+      state.pgTotal = Math.max(1, Math.ceil(hitRanks.length / combosPageSize));
+      page = Math.max(1, Math.min(page, state.pgTotal));
+      const start = (page - 1) * combosPageSize;
+      const end   = Math.min(start + combosPageSize, hitRanks.length);
+      for (let i = start; i < end; i++){
+        const r   = hitRanks[i];
+        const arr = unrankComb(35,5,r);
+        const key = comboKey(arr);
+        const ids = winMap.get(key) || [];
+        const nums = numsSpan(arr);
+        list.insertAdjacentHTML("beforeend", `
+          <div class="combo-item hit" data-key="${key}">
+            <div class="nums">${nums}</div>
+            <div class="meta">
+              <span class="badge">#${r}</span>
+              <span class="badge">${ids.length} lần</span>
+              <button class="btn-mini btn-detail">Chi tiết</button>
+            </div>
+          </div>
+          <div class="combo-detail" data-detail="${key}"></div>
+        `);
+      }
+      state.pgCur = page;
+    }
+
+    document.getElementById("pg-cur").textContent = String(state.pgCur);
+    document.getElementById("pg-total").textContent = String(state.pgTotal);
+    document.getElementById("pg-input").value = "";
   }
-  function numsSpan(arr){ return arr.map(n=>`<span class="n">${String(n).padStart(2,'0')}</span>`).join(""); }
-  function comboKey(arr){ return arr.join("-"); }
-	  // Tạo map: key "a-b-c-d-e" -> rank (1..324632) theo thứ tự tăng dần
-	function buildKeyToRank() {
-	  const m = new Map();
-	  const gen = combosGenerator();
-	  let rank = 1;
-	  while (true) {
-		const arr = gen.next();
-		if (!arr) break;
-		m.set(comboKey(arr), rank);
-		rank++;
-	  }
-	  return m;
-	}
 
-	// Từ winMap (key -> [ids...]) lấy ra danh sách rank đã trúng, tăng dần
-	function buildWinRanks(winMap, keyToRank) {
-	  const ranks = [];
-	  for (const key of winMap.keys()) {
-		const r = keyToRank.get(key);
-		if (r != null) ranks.push(r);
-	  }
-	  ranks.sort((a,b)=>a-b);
-	  return ranks;
-	}
-
-	// Tính các khoảng cách giữa rank trúng liên tiếp + TB
-	function gapStatsFromWinRanks(winRanks) {
-	  const gaps = [];
-	  for (let i=1;i<winRanks.length;i++) {
-		gaps.push(winRanks[i] - winRanks[i-1]);
-	  }
-	  const avg = gaps.length ? (gaps.reduce((a,b)=>a+b,0) / gaps.length) : 0;
-	  return { gaps, avg };
-	}
-
-  function gapsSummary(ids){ // ids tăng dần
-    const gaps=[]; for(let i=1;i<ids.length;i++) gaps.push(ids[i]-ids[i-1]);
-    if (!gaps.length) return {gaps, summary:"" };
-    const sum=gaps.reduce((a,b)=>a+b,0);
-    const min=Math.min(...gaps), max=Math.max(...gaps), avg=(sum/gaps.length).toFixed(1);
-    return { gaps, summary:`Min ${min} • Avg ${avg} • Max ${max}` };
-  }
-
-  // ====== MAIN RENDER ======
+  // ------------- Main render -------------
   async function renderLotto535(){
     ensureStylesOnce();
     const container = document.getElementById("lotto535");
     if(!container) return;
 
-    // ----- khung tabs -----
+    // frame
     container.classList.add("lotto535");
     container.innerHTML = `
       <div class="legend">
@@ -249,7 +301,7 @@
           </thead>
           <tbody></tbody>
         </table>
-        <div class="loadmore"><button class="btn">Tải thêm</button></div>
+        <div class="loadmore"><button class="btn" id="res-more">Tải thêm</button></div>
         <div id="results-sentinel" style="height:1px;"></div>
       </div>
 
@@ -257,30 +309,37 @@
         <div class="combo-bar">
           <label class="chk"><input type="checkbox" id="chk-hitonly"> Chỉ hiển thị bộ đã trúng</label>
         </div>
+        <div class="pager">
+          <button class="btn-mini" id="pg-prev">Prev</button>
+          <span>Trang <span id="pg-cur">1</span> / <span id="pg-total">?</span></span>
+          <form id="pg-jump" style="display:flex;align-items:center;gap:6px;">
+            <span>Nhảy tới</span>
+            <input id="pg-input" type="number" min="1" step="1" />
+            <button class="btn-mini" type="submit">Go</button>
+          </form>
+          <button class="btn-mini" id="pg-next">Next</button>
+        </div>
         <div class="combos" id="combos-list"></div>
-        <div class="loadmore"><button class="btn" id="combos-more">Tải thêm tổ hợp</button></div>
-        <div id="combos-sentinel" style="height:1px;"></div>
       </div>
     `;
 
-    // ----- load data -----
+    // load data
     const dataPath = CFG.dataPath;
     let raw; if (dataPath.endsWith(".jsonl")) raw = parseJSONLLocal(await loadText(dataPath)); else raw = await loadJSON(dataPath);
     const data = sortByNewestId(raw);
     const occIndex = buildOccurrenceIndex(data);
     const winMap = buildWinMap(data);
-	const keyToRank  = buildKeyToRank();
-	const winRanks   = buildWinRanks(winMap, keyToRank);        // mảng rank đã trúng (tăng dần)
-	const winGapStat = gapStatsFromWinRanks(winRanks);          // {gaps:[...], avg:number}
+    const keyToRank = buildKeyToRank();
+    const winRanks  = buildWinRanks(winMap, keyToRank);
+    const winGapStat = gapStatsFromWinRanks(winRanks);
 
-
-    // ===== Tab: KẾT QUẢ =====
+    // ===== Results tab =====
     const tbody = container.querySelector("#tab-results tbody");
     const toggleBtn = container.querySelector("#toggle-gaps");
     let cursorRes = 0;
     const pageRes = CFG.pageSizeResults, initRes = CFG.maxInitialResults;
 
-    const rowHtml = (item)=>{
+    function rowHtml(item){
       const main = item.result.slice(0,5);
       const bonus = item.result[5];
       const dataNums = main.join(",");
@@ -288,7 +347,7 @@
         <tr class="r-bg" data-id="${item.id}" data-main="${dataNums}" data-bonus="${bonus}">
           <td class="cell-date">${item.date}</td>
           <td class="cell-id">#${item.id}</td>
-          <td class="cell-balls">
+          <td>
             <div class="view view-balls">
               <div class="balls">
                 ${main.map(n=>ballHtml(n)).join("")}
@@ -301,7 +360,7 @@
             </div>
           </td>
         </tr>`;
-    };
+    }
     function renderSliceResults(start,count){
       const end = Math.min(start+count, data.length);
       let html=""; for(let i=start;i<end;i++) html += rowHtml(data[i]);
@@ -310,7 +369,7 @@
     }
     cursorRes = renderSliceResults(cursorRes, initRes);
 
-    const setMode = (showGaps)=>{
+    function setMode(showGaps){
       const rows = tbody.querySelectorAll("tr.r-bg");
       rows.forEach(tr=>{
         const balls = tr.querySelector(".view-balls");
@@ -324,12 +383,11 @@
       });
       toggleBtn.dataset.showing = showGaps ? "1" : "0";
       toggleBtn.textContent = showGaps ? "Ẩn khoảng kỳ" : "Hiện khoảng kỳ";
-    };
+    }
     toggleBtn.addEventListener("click", ()=> setMode(toggleBtn.dataset.showing !== "1"));
 
-    // load more (results)
-    const btnMoreRes = container.querySelector("#tab-results .loadmore .btn");
-    const moreRes = ()=>{
+    const btnMoreRes = document.getElementById("res-more");
+    function moreRes(){
       const prev = cursorRes;
       cursorRes = renderSliceResults(cursorRes, pageRes);
       if (toggleBtn.dataset.showing === "1"){
@@ -341,7 +399,7 @@
         });
       }
       if (cursorRes >= data.length){ btnMoreRes.disabled = true; btnMoreRes.textContent = "Hết dữ liệu"; obsRes?.disconnect(); }
-    };
+    }
     btnMoreRes.addEventListener("click", moreRes);
     let obsRes=null;
     if ("IntersectionObserver" in window){
@@ -349,123 +407,71 @@
       obsRes.observe(document.getElementById("results-sentinel"));
     }
 
-    // ===== Tab: TỔ HỢP 5/35 =====
-    const combosList = container.querySelector("#combos-list");
-    const chkHitOnly = container.querySelector("#chk-hitonly");
-    const gen = combosGenerator();
-    let emitted = 0; // số bộ đã render
-    const pageComb = CFG.pageSizeCombos;
-
-    function comboItemHtml(arr){
-      const key = comboKey(arr);
-      const ids = winMap.get(key); // undefined nếu chưa trúng
-      const hit = !!ids;
-      const nums = numsSpan(arr);
-      const badge = hit ? `<span class="badge">${ids.length} lần</span>` : "";
-      const cls = hit ? "combo-item hit" : "combo-item";
-	  
-	  const rank = keyToRank.get(key);
-
-      return `
-        <div class="${cls}" data-key="${key}">
-          <div class="nums">${nums}</div>
-          <div class="meta">
-		  <span class="badge">#${rank}</span>
-            ${badge}
-            <button class="btn-mini btn-detail" ${hit?"":"disabled"}>Chi tiết</button>
-          </div>
-        </div>
-        <div class="combo-detail" data-detail="${key}"></div>
-      `;
-    }
-
-    function renderMoreCombos(limitCount){
-      let count=0;
-      while(count<limitCount){
-        const arr = gen.next(); if (!arr) break;
-        // filter "chỉ bộ đã trúng"
-        if (chkHitOnly.checked && !winMap.has(comboKey(arr))) continue;
-
-        combosList.insertAdjacentHTML("beforeend", comboItemHtml(arr));
-        count++; emitted++;
-      }
-      return count;
-    }
-
-    // nạp trang đầu cho combos
-    renderMoreCombos(pageComb);
-
-	combosList.addEventListener("click", (ev)=>{
-	  const btn = ev.target.closest(".btn-detail"); if (!btn) return;
-	  const item = btn.closest(".combo-item");
-	  const key  = item?.dataset.key;
-	  const pane = combosList.querySelector(`.combo-detail[data-detail="${key}"]`);
-	  if (!pane) return;
-
-	  if (pane.classList.contains("show")) { pane.classList.remove("show"); pane.innerHTML=""; return; }
-
-	  // rank của bộ đang xem
-	  const rank = keyToRank.get(key); // 1..324632
-	  // vị trí của rank này trong danh sách winRanks (nếu bộ này đã trúng)
-	  const idx  = winRanks.indexOf(rank); // -1 nếu chưa trúng
-	  // Lấy hàng xóm đã trúng để minh hoạ khoảng cách
-	  let prevInfo = "—", nextInfo = "—";
-	  if (idx >= 0) {
-		if (idx > 0) {
-		  const prevRank = winRanks[idx-1];
-		  prevInfo = `${rank - prevRank} (từ #${prevRank} → #${rank})`;
-		}
-		if (idx < winRanks.length - 1) {
-		  const nextRank = winRanks[idx+1];
-		  nextInfo = `${nextRank - rank} (từ #${rank} → #${nextRank})`;
-		}
-	  }
-
-	  // Thông tin tổng quát toàn bộ các bộ đã trúng
-	  const gapsLabel = winGapStat.gaps.length ? winGapStat.gaps.join(", ") : "—";
-	  const avgLabel  = winGapStat.gaps.length ? winGapStat.avg.toFixed(2) : "—";
-
-	  pane.innerHTML = `
-		<div class="detail-line"><b>Thứ tự bộ này:</b> #${rank}</div>
-		<div class="detail-line"><b>Khoảng cách tới bộ trúng liền trước:</b> ${prevInfo}</div>
-		<div class="detail-line"><b>Khoảng cách tới bộ trúng liền sau:</b> ${nextInfo}</div>
-		<div class="detail-line"><b>Khoảng cách giữa các bộ trúng (toàn cục):</b> ${gapsLabel}</div>
-		<div class="detail-line"><b>TB khoảng cách (toàn cục):</b> ${avgLabel}</div>
-	  `;
-	  pane.classList.add("show");
-	});
-
-
-    // load more (combos) button + infinite
-    const btnMoreComb = document.getElementById("combos-more");
-    const moreComb = ()=>{
-      const added = renderMoreCombos(pageComb);
-      if (added === 0){ btnMoreComb.disabled=true; btnMoreComb.textContent="Hết tổ hợp"; obsComb?.disconnect(); }
+    // ===== Combos tab =====
+    const TOTAL_COMBOS = nCk(35,5); // 324632
+    const combosState = {
+      winMap,
+      keyToRank,
+      hitRanks: winRanks.slice(),
+      TOTAL_COMBOS,
+      combosPageSize: CFG.combosPageSize,
+      pgCur: 1,
+      pgTotal: Math.ceil(TOTAL_COMBOS / CFG.combosPageSize),
+      winGapStat
     };
-    btnMoreComb.addEventListener("click", moreComb);
-    let obsComb=null;
-    if ("IntersectionObserver" in window){
-      obsComb = new IntersectionObserver(es=>{ for (const e of es) if (e.isIntersecting) moreComb(); }, {rootMargin:"800px 0px"});
-      obsComb.observe(document.getElementById("combos-sentinel"));
-    }
 
-    // filter: chỉ bộ đã trúng
-    chkHitOnly.addEventListener("change", ()=>{
-      combosList.innerHTML = "";
-      // reset generator? tạo mới để đếm lại theo thứ tự
-      Object.assign(gen, combosGenerator()); // không chuẩn cho object literal; tạo lại đúng:
+    // First paint
+    renderCombosPage(combosState, 1);
+
+    // Detail click: show rank info + neighbor rank gaps + global gaps stats
+    const combosList = document.getElementById("combos-list");
+    combosList.addEventListener("click", (ev)=>{
+      const btn = ev.target.closest(".btn-detail"); if (!btn) return;
+      const item = btn.closest(".combo-item");
+      const key  = item?.dataset.key;
+      const pane = combosList.querySelector(`.combo-detail[data-detail="${key}"]`);
+      if (!pane) return;
+      if (pane.classList.contains("show")){ pane.classList.remove("show"); pane.innerHTML=""; return; }
+
+      const rank = keyToRank.get(key);
+      const idx  = combosState.hitRanks.indexOf(rank);
+      let prevInfo = "—", nextInfo = "—";
+      if (idx >= 0){
+        if (idx > 0){
+          const prevRank = combosState.hitRanks[idx-1];
+          prevInfo = `${rank - prevRank} (từ #${prevRank} → #${rank})`;
+        }
+        if (idx < combosState.hitRanks.length - 1){
+          const nextRank = combosState.hitRanks[idx+1];
+          nextInfo = `${nextRank - rank} (từ #${rank} → #${nextRank})`;
+        }
+      }
+      const gaps = combosState.winGapStat.gaps;
+      const avgLabel = gaps.length ? combosState.winGapStat.avg.toFixed(2) : "—";
+
+      pane.innerHTML = `
+        <div class="detail-line"><b>Thứ tự bộ này:</b> #${rank}</div>
+        <div class="detail-line"><b>Khoảng cách tới bộ trúng liền trước:</b> ${prevInfo}</div>
+        <div class="detail-line"><b>Khoảng cách tới bộ trúng liền sau:</b> ${nextInfo}</div>
+        <div class="detail-line"><b>TB khoảng cách (toàn cục theo thứ tự tổ hợp):</b> ${avgLabel}</div>
+      `;
+      pane.classList.add("show");
     });
 
-    // (re)create generator correctly on filter change
-    chkHitOnly.addEventListener("change", ()=>{
-      combosList.innerHTML = "";
-      const newGen = combosGenerator();
-      gen.next = newGen.next; // hot swap logic
-      emitted = 0;
-      renderMoreCombos(pageComb);
+    // Pager & filters
+    document.getElementById("pg-prev").addEventListener("click", (e)=>{ e.preventDefault(); renderCombosPage(combosState, combosState.pgCur - 1); });
+    document.getElementById("pg-next").addEventListener("click", (e)=>{ e.preventDefault(); renderCombosPage(combosState, combosState.pgCur + 1); });
+    document.getElementById("pg-jump").addEventListener("submit", (e)=>{
+      e.preventDefault();
+      const val = parseInt(document.getElementById("pg-input").value, 10);
+      if (!Number.isFinite(val)) return;
+      renderCombosPage(combosState, val);
+    });
+    document.getElementById("chk-hitonly").addEventListener("change", ()=>{
+      renderCombosPage(combosState, 1);
     });
 
-    // ===== Subtabs switching =====
+    // Subtabs switching
     const tabs = container.querySelectorAll(".subtabs .tbtn");
     function showTab(name){
       tabs.forEach(b=>b.classList.toggle("active", b.dataset.tab===name));
